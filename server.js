@@ -60,8 +60,10 @@ app.post("/api/bot/event", async (req, res) => {
 
     const now = new Date();
 
+    // =========================
+    // PARSED EVENT
+    // =========================
     if (status === "PARSED") {
-      // INSERT only if not exists
       await db.query(
         `
         INSERT INTO bot_dashboard_cases
@@ -75,8 +77,6 @@ app.post("/api/bot/event", async (req, res) => {
           status
         )
         VALUES ($1,$2,$3,$4,$5,$6,'PARSED')
-        ON CONFLICT (al_number)
-        DO NOTHING
         `,
         [
           patientName || "N/A",
@@ -89,17 +89,50 @@ app.post("/api/bot/event", async (req, res) => {
       );
     }
 
+    // =========================
+    // SAVED EVENT
+    // =========================
     if (status === "SAVED") {
-      // UPDATE existing row
+      // Get parsed_time ONLY for this AL number
+      const parsedRes = await db.query(
+        `
+        SELECT parsed_time
+        FROM bot_dashboard_cases
+        WHERE al_number = $1
+          AND status = 'PARSED'
+        ORDER BY parsed_time DESC
+        LIMIT 1
+        `,
+        [alNumber]
+      );
+
+      const parsedTime =
+        parsedRes.rows.length > 0 ? parsedRes.rows[0].parsed_time : null;
+
       await db.query(
         `
-        UPDATE bot_dashboard_cases
-        SET
-          saved_time = $1,
-          status = 'SAVED'
-        WHERE al_number = $2
+        INSERT INTO bot_dashboard_cases
+        (
+          patient_name,
+          al_number,
+          policy_number,
+          hospital_group,
+          tpa_name,
+          parsed_time,
+          saved_time,
+          status
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,'SAVED')
         `,
-        [now, alNumber]
+        [
+          patientName || "N/A",
+          alNumber,
+          policyNumber || "N/A",
+          hospitalGroup || "N/A",
+          tpa,
+          parsedTime,
+          now
+        ]
       );
     }
 
@@ -111,6 +144,7 @@ app.post("/api/bot/event", async (req, res) => {
     res.sendStatus(500);
   }
 });
+
 
 
 /* =========================
