@@ -53,50 +53,65 @@ app.post("/api/bot/event", async (req, res) => {
       tpa
     } = req.body;
 
-    // Ignore invalid payloads silently
-    if (!status || !tpa) {
+    if (!status || !tpa || !alNumber) {
       console.warn("⚠ Invalid payload:", req.body);
       return res.sendStatus(200);
     }
 
     const now = new Date();
 
-    await db.query(
-      `
-      INSERT INTO bot_dashboard_cases
-      (
-        patient_name,
-        al_number,
-        policy_number,
-        hospital_group,
-        tpa_name,
-        parsed_time,
-        saved_time,
-        status
-      )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-      `,
-      [
-        patientName || "N/A",
-        alNumber || "N/A",
-        policyNumber || "N/A",
-        hospitalGroup || "N/A",
-        tpa || "N/A",
-        status === "PARSED" ? now : null,
-        status === "SAVED" ? now : null,
-        status
-      ]
-    );
+    if (status === "PARSED") {
+      // INSERT only if not exists
+      await db.query(
+        `
+        INSERT INTO bot_dashboard_cases
+        (
+          patient_name,
+          al_number,
+          policy_number,
+          hospital_group,
+          tpa_name,
+          parsed_time,
+          status
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,'PARSED')
+        ON CONFLICT (al_number)
+        DO NOTHING
+        `,
+        [
+          patientName || "N/A",
+          alNumber,
+          policyNumber || "N/A",
+          hospitalGroup || "N/A",
+          tpa,
+          now
+        ]
+      );
+    }
 
-    // Notify dashboard in realtime
+    if (status === "SAVED") {
+      // UPDATE existing row
+      await db.query(
+        `
+        UPDATE bot_dashboard_cases
+        SET
+          saved_time = $1,
+          status = 'SAVED'
+        WHERE al_number = $2
+        `,
+        [now, alNumber]
+      );
+    }
+
     io.emit("bot_update");
-
     res.sendStatus(200);
+
   } catch (err) {
     console.error("❌ BOT EVENT ERROR:", err);
     res.sendStatus(500);
   }
 });
+
 
 /* =========================
    DASHBOARD APIs
